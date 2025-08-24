@@ -1,92 +1,92 @@
 #include <gtkmm.h>
 #include <SFML/Audio.hpp>
 #include <iostream>
-#include <iomanip>
+#include <vector>
+#include <string>
+#include <memory>
 #include <sstream>
 
 class MusicPlayer : public Gtk::Window {
 public:
     MusicPlayer()
-    : play_button("▶ Play"), pause_button("⏸ Pause"),
-      stop_button("⏹ Stop"), next_button("⏭ Next"),
-      prev_button("⏮ Prev"),
-      open_button("📂 Open File")
     {
         set_title("Music Player");
-        set_default_size(400, 200);
+        set_default_size(500, 400);
 
-        // Layout
-        vbox.set_margin(10);
-        set_child(vbox);
+        // Layout utama
+        set_child(main_box);
+        main_box.set_orientation(Gtk::Orientation::VERTICAL);
 
         // Tombol kontrol
-        controls.set_spacing(5);
-        controls.append(prev_button);
-        controls.append(play_button);
-        controls.append(pause_button);
-        controls.append(stop_button);
-        controls.append(next_button);
+        control_box.set_orientation(Gtk::Orientation::HORIZONTAL);
+        main_box.append(control_box);
 
-        vbox.append(controls);
-        vbox.append(open_button);
+        btn_open.set_label("📂 Open");
+        btn_play.set_label("▶ Play");
+        btn_pause.set_label("⏸ Pause");
+        btn_stop.set_label("⏹ Stop");
+        btn_prev.set_label("⏮ Prev");
+        btn_next.set_label("⏭ Next");
+
+        control_box.append(btn_open);
+        control_box.append(btn_prev);
+        control_box.append(btn_play);
+        control_box.append(btn_pause);
+        control_box.append(btn_stop);
+        control_box.append(btn_next);
 
         // Progress bar
-        progress.set_hexpand(true);
-        vbox.append(progress);
+        progress_box.set_orientation(Gtk::Orientation::HORIZONTAL);
+        main_box.append(progress_box);
 
-        // Label waktu
+        progress_box.append(progress_scale);
+        progress_box.append(time_label);
+
+        progress_scale.set_draw_value(false);
+        progress_scale.set_hexpand(true);
+        progress_scale.set_range(0, 100);
+        progress_scale.set_value(0);
+
         time_label.set_text("00:00 / 00:00");
-        vbox.append(time_label);
 
-        // Signal tombol
-        open_button.signal_clicked().connect(sigc::mem_fun(*this, &MusicPlayer::on_open_file));
-        play_button.signal_clicked().connect(sigc::mem_fun(*this, &MusicPlayer::on_play));
-        pause_button.signal_clicked().connect(sigc::mem_fun(*this, &MusicPlayer::on_pause));
-        stop_button.signal_clicked().connect(sigc::mem_fun(*this, &MusicPlayer::on_stop));
-        next_button.signal_clicked().connect(sigc::mem_fun(*this, &MusicPlayer::on_next));
-        prev_button.signal_clicked().connect(sigc::mem_fun(*this, &MusicPlayer::on_prev));
+        // Playlist
+        main_box.append(playlist_box);
+        playlist_box.set_vexpand(true);
+
+        // Hubungkan sinyal tombol
+        btn_open.signal_clicked().connect(sigc::mem_fun(*this, &MusicPlayer::on_open));
+        btn_play.signal_clicked().connect(sigc::mem_fun(*this, &MusicPlayer::on_play));
+        btn_pause.signal_clicked().connect(sigc::mem_fun(*this, &MusicPlayer::on_pause));
+        btn_stop.signal_clicked().connect(sigc::mem_fun(*this, &MusicPlayer::on_stop));
+        btn_prev.signal_clicked().connect(sigc::mem_fun(*this, &MusicPlayer::on_prev));
+        btn_next.signal_clicked().connect(sigc::mem_fun(*this, &MusicPlayer::on_next));
+
+        // Hubungkan klik pada playlist row
+        playlist_box.signal_row_activated().connect(sigc::mem_fun(*this, &MusicPlayer::on_row_activated));
 
         // Timer update progress
         Glib::signal_timeout().connect(sigc::mem_fun(*this, &MusicPlayer::update_progress), 500);
     }
 
 private:
-    Gtk::Box vbox{Gtk::Orientation::VERTICAL};
-    Gtk::Box controls{Gtk::Orientation::HORIZONTAL};
-
-    Gtk::Button play_button, pause_button, stop_button, next_button, prev_button, open_button;
-    Gtk::Scale progress{Gtk::Orientation::HORIZONTAL};
+    Gtk::Box main_box, control_box, progress_box;
+    Gtk::Button btn_open, btn_play, btn_pause, btn_stop, btn_prev, btn_next;
+    Gtk::Scale progress_scale{Gtk::Orientation::HORIZONTAL};
     Gtk::Label time_label;
+    Gtk::ListBox playlist_box;
 
     sf::Music music;
     std::vector<std::string> playlist;
     int current_index = -1;
-    bool dragging = false;
+    bool slider_dragging = false;
 
-    // Format detik -> mm:ss
-    std::string format_time(sf::Time t) {
-        int sec = static_cast<int>(t.asSeconds());
-        int m = sec / 60;
-        int s = sec % 60;
-        std::ostringstream oss;
-        oss << std::setw(2) << std::setfill('0') << m << ":"
-            << std::setw(2) << std::setfill('0') << s;
-        return oss.str();
-    }
-
-    void on_open_file() {
-        auto dialog = std::make_shared<Gtk::FileChooserDialog>("Pilih File Musik", Gtk::FileChooser::Action::OPEN);
-        dialog->add_button("_Batal", Gtk::ResponseType::CANCEL);
-        dialog->add_button("_Pilih", Gtk::ResponseType::ACCEPT);
-
-        // Filter audio
-        auto filter = Gtk::FileFilter::create();
-        filter->set_name("Audio files");
-        filter->add_pattern("*.ogg");
-        filter->add_pattern("*.wav");
-        filter->add_pattern("*.flac");
-        filter->add_pattern("*.mp3");
-        dialog->add_filter(filter);
+    // Open file
+    void on_open()
+    {
+        auto dialog = new Gtk::FileChooserDialog("Select Music File", Gtk::FileChooser::Action::OPEN);
+        dialog->set_transient_for(*this);
+        dialog->add_button("_Cancel", Gtk::ResponseType::CANCEL);
+        dialog->add_button("_Open", Gtk::ResponseType::ACCEPT);
 
         dialog->signal_response().connect([this, dialog](int response) {
             if (response == Gtk::ResponseType::ACCEPT) {
@@ -94,6 +94,13 @@ private:
                 if (file) {
                     std::string path = file->get_path();
                     playlist.push_back(path);
+
+                    auto row = Gtk::make_managed<Gtk::ListBoxRow>();
+                    auto label = Gtk::make_managed<Gtk::Label>(path);
+                    row->set_child(*label);
+                    playlist_box.append(*row);
+                    playlist_box.show();
+
                     if (current_index < 0) {
                         current_index = 0;
                         load_and_play(playlist[current_index]);
@@ -101,40 +108,30 @@ private:
                 }
             }
             dialog->hide();
+            delete dialog;
         });
 
-        dialog->set_transient_for(*this);
         dialog->show();
     }
 
-    void load_and_play(const std::string& filename) {
-        if (!music.openFromFile(filename)) {
-            std::cerr << "Gagal memuat musik: " << filename << std::endl;
-            return;
-        }
-        music.play();
-        update_progress();
-    }
-
+    // Play
     void on_play() {
-        if (current_index >= 0) music.play();
-    }
-
-    void on_pause() {
-        if (current_index >= 0) music.pause();
-    }
-
-    void on_stop() {
-        if (current_index >= 0) music.stop();
-    }
-
-    void on_next() {
-        if (current_index + 1 < (int)playlist.size()) {
-            current_index++;
+        if (music.getStatus() == sf::SoundSource::Paused)
+            music.play();
+        else if (current_index >= 0)
             load_and_play(playlist[current_index]);
-        }
     }
 
+    // Pause
+    void on_pause() { music.pause(); }
+
+    // Stop
+    void on_stop() {
+        music.stop();
+        progress_scale.set_value(0);
+    }
+
+    // Previous
     void on_prev() {
         if (current_index > 0) {
             current_index--;
@@ -142,21 +139,77 @@ private:
         }
     }
 
-    bool update_progress() {
-        if (current_index >= 0) {
-            auto dur = music.getDuration();
-            auto pos = music.getPlayingOffset();
-
-            double frac = (dur.asSeconds() > 0) ? pos.asSeconds() / dur.asSeconds() : 0;
-            progress.set_value(frac * 100);
-
-            time_label.set_text(format_time(pos) + " / " + format_time(dur));
+    // Next
+    void on_next() {
+        if (current_index >= 0 && current_index < (int)playlist.size() - 1) {
+            current_index++;
+            load_and_play(playlist[current_index]);
         }
-        return true; // keep timer alive
+    }
+
+    // Klik playlist
+    void on_row_activated(Gtk::ListBoxRow* row)
+    {
+        int index = row->get_index();
+        if (index >= 0 && index < (int)playlist.size()) {
+            current_index = index;
+            load_and_play(playlist[current_index]);
+        }
+    }
+
+    // Load & play
+    void load_and_play(const std::string& file)
+    {
+        if (!music.openFromFile(file)) {
+            std::cerr << "Failed to load file: " << file << std::endl;
+            return;
+        }
+        music.play();
+
+        progress_scale.set_range(0, music.getDuration().asSeconds());
+        progress_scale.set_value(0);
+
+        // Sinkronkan seek
+        progress_scale.signal_change_value().connect(
+            sigc::mem_fun(*this, &MusicPlayer::on_slider_changed), false);
+    }
+
+    // Update progress
+    bool update_progress()
+    {
+        if (!slider_dragging && music.getStatus() == sf::SoundSource::Playing) {
+            progress_scale.set_value(music.getPlayingOffset().asSeconds());
+        }
+
+        int cur = music.getPlayingOffset().asSeconds();
+        int total = music.getDuration().asSeconds();
+
+        time_label.set_text(format_time(cur) + " / " + format_time(total));
+        return true;
+    }
+
+    // Seek
+    bool on_slider_changed(Gtk::ScrollType, double value)
+    {
+        slider_dragging = true;
+        music.setPlayingOffset(sf::seconds(value));
+        slider_dragging = false;
+        return true;
+    }
+
+    // Format waktu mm:ss
+    std::string format_time(int seconds)
+    {
+        int m = seconds / 60;
+        int s = seconds % 60;
+        std::ostringstream oss;
+        oss << (m < 10 ? "0" : "") << m << ":" << (s < 10 ? "0" : "") << s;
+        return oss.str();
     }
 };
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[])
+{
     auto app = Gtk::Application::create("org.example.musicplayer");
     return app->make_window_and_run<MusicPlayer>(argc, argv);
 }
